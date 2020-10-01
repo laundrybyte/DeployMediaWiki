@@ -1,4 +1,6 @@
-# Prior to beginning: On control node, run "ansible-galaxy collection install community.mysql" and "ansible-galaxy collection install ansible.posix"
+# Prior to beginning: On control node, run:
+# "ansible-galaxy collection install community.mysql" 
+# and "ansible-galaxy collection install ansible.posix"
 
 - name: Deploy MediaWiki
   hosts: server
