@@ -1,0 +1,123 @@
+# Prior to beginning: On control node, run "ansible-galaxy collection install community.mysql" and "ansible-galaxy collection install ansible.posix"
+
+- name: Deploy MediaWiki
+  hosts: server
+  become: true
+  vars_files:
+    - ./group_vars/mysql
+
+  tasks:
+  - name: Installing required packages
+    dnf:
+      name: "{{ packages }}"
+      state: latest
+    vars:
+      packages:
+        - httpd
+        - php-mysqlnd
+        - php-gd
+        - php-xml
+        - mariadb-server
+        - mariadb
+        - php-mbstring
+        - php-json
+        - tar
+        - wget
+        - python3
+        - python3-PyMySQL
+  - name: Installing PHP 7.3
+    dnf:
+      name: '@php:7.3'
+      state: present
+  - name: Enabling MariaDB
+    service:
+      name: mariadb
+      state: started
+      enabled: yes
+  - name: Downloading MediaWiki
+    get_url:
+      url: https://releases.wikimedia.org/mediawiki/1.35/mediawiki-1.35.0.tar.gz
+      dest: ~/mediawiki-1.35.0.tar.gz
+  - name: Unarchiving MediaWiki
+    unarchive:
+      src: ~/mediawiki-1.35.0.tar.gz
+      dest: /var/www
+      remote_src: yes
+  - name: Linking MediaWiki
+    file:
+      src: /var/www/mediawiki-1.35.0
+      dest: /var/www/mediawiki
+      state: link
+
+# Create subdirectory "group_vars", containing a text file named "mysql" or something.
+# Add line "mysql_root_pass: <password>" to text file.
+# Add line "mysql_wiki_pass"
+
+  - name: Removing anonymous login
+    community.mysql.mysql_user:
+      name: ''
+      host: localhost
+      state: absent
+  - name: Creating wiki database
+    community.mysql.mysql_db:
+      name: wikidatabase
+      state: present
+  - name: Creating wikiadmin user
+    community.mysql.mysql_user:
+      name: wikiadmin
+      password: '{{ mysql_wiki_pass }}'
+      priv: '*.*:ALL,GRANT'
+      state: present
+  - name: Setting MySQL root password
+    community.mysql.mysql_user:
+      login_host: 'localhost'
+      login_user: 'root'
+      login_password: ''
+      name: 'root'
+      password: '{{ mysql_root_pass }}'
+      state: present
+
+# The above does not appear to work properly, despite yielding no errors.
+# I can sign into mysql with "mysql -u wikiadmin -p" and password,
+# but running "SHOW GRANTS FOR 'wikiadmin';" returns "there is no such grant"
+# attempting to apply manually with "GRANT ALL PRIVILEGES ON wikidatabase.* TO 'wikiadmin';"
+# says there is no wikiadmin in the users file?
+
+# If problems occur, run the following manually:
+# CREATE USER 'wikiadmin' IDENTIFIED BY 'password';
+# GRANT ALL PRIVILEGES ON wikidatabase.* to 'wikiadmin';
+# FLUSH PRIVILEGES;
+# SHOW GRANTS FOR 'wikiadmin';
+
+  - name: Removing original httpd.conf file
+    file:
+      path: /etc/httpd/conf/httpd.conf
+      state: absent
+  - name: Adding modified httpd.conf file
+    template:
+      src: ./httpd.conf
+      dest: /etc/httpd/conf/httpd.conf
+      owner: root
+      group: root
+      mode: u=rw,g=r,o=r
+  - name: Enabling httpd
+    service:
+      name: httpd
+      state: started
+      enabled: yes
+  - name: Enabling http firewall configuration
+    ansible.posix.firewalld:
+      service: http
+      permanent: yes
+      state: enabled
+      zone: public
+  - name: Enabling https firewall configuration
+    ansible.posix.firewalld:
+      service: https
+      permanent: yes
+      state: enabled
+      zone: public
+  - name: Reloading firewalld
+    systemd:
+      name: firewalld
+      state: restarted
