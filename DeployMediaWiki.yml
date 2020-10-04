@@ -6,7 +6,7 @@
   hosts: server
   become: true
   vars_files:
-    - ./group_vars/mysql
+    - ./DeployMediaWiki-vars.yml
 
   tasks:
   - name: Installing required packages
